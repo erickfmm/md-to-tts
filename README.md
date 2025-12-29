@@ -7,8 +7,8 @@ Convierte todos los archivos Markdown del directorio `modificacion1/` en audios 
 - `mms` → [facebook/mms-tts-spa](https://huggingface.co/facebook/mms-tts-spa) (recomendado, español nativo).
 - `kokoro` → [hexgrad/Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M).
 - `chatterbox` → [ResembleAI/chatterbox](https://huggingface.co/ResembleAI/chatterbox).
-- `vibevoice` → [microsoft/VibeVoice-Realtime-0.5B](https://huggingface.co/microsoft/VibeVoice-Realtime-0.5B) *(placeholder: requiere su stack de streaming oficial).* 
-- `cosyvoice` → [FunAudioLLM/Fun-CosyVoice3-0.5B-2512](https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512) *(placeholder: integra CosyVoice completo o servidor dedicado).* 
+- `vibevoice` → [microsoft/VibeVoice-Realtime-0.5B](https://huggingface.co/microsoft/VibeVoice-Realtime-0.5B) (soporte real vía `transformers` pipeline, necesita GPU para fluidez).
+- `cosyvoice` → [FunAudioLLM/Fun-CosyVoice3-0.5B-2512](https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512) (soporte real si instalas CosyVoice desde su repo; puede usar `--cosyvoice-model-dir` y `--cosyvoice-prompt-wav`).
 
 Para uso inmediato en español, elija `--engine mms`. `kokoro` y `chatterbox` funcionan, pero sus descargas son pesadas y pueden requerir GPU para buen rendimiento.
 
@@ -42,6 +42,13 @@ md-tts --engine kokoro --input-dir modificacion1 --output-dir output_audio_kokor
 
 # Usar Chatterbox (multilingüe) en GPU
 md-tts --engine chatterbox --device cuda
+
+# VibeVoice (streaming-ready; requiere GPU para buen rendimiento)
+md-tts --engine vibevoice --device cuda --input-dir modificacion1 --output-dir output_audio_vibe
+
+# CosyVoice 3 (requiere instalar CosyVoice desde su repo)
+md-tts --engine cosyvoice --device cuda --cosyvoice-model-dir /ruta/al/modelo \
+  --cosyvoice-prompt-wav ./mi_voz.wav
 ```
 
 - Los WAV resultantes se guardan en `--output-dir` con el mismo nombre base del Markdown.
@@ -53,17 +60,18 @@ md-tts --engine chatterbox --device cuda
 ```
 src/md_tts/
   parser.py       # Divide Markdown en secciones y párrafos
-  tts.py          # Motores TTS
+  tts.py          # Motores TTS (MMS, Kokoro, Chatterbox, VibeVoice, CosyVoice)
   audio_utils.py  # Conversión y unión de audio
   cli.py          # Punto de entrada de línea de comandos
-project.toml      # Metadatos y dependencias
+pyproject.toml    # Metadatos y dependencias
 Dockerfile        # Imagen lista para ejecutar
 ```
 
 ## Notas y limitaciones
 
-- VibeVoice y CosyVoice aparecen como placeholders: el CLI informa que la integración no está implementada aún y sugiere usar los runtimes oficiales.
-- Los modelos son pesados; la primera ejecución descargará varios cientos de MB.
+- VibeVoice ahora usa el pipeline de `transformers`; para buena latencia requiere GPU y drivers válidos.
+- CosyVoice necesita instalar su repo (`https://github.com/FunAudioLLM/CosyVoice`) y dependencias (torch, torchaudio, funasr). Puedes apuntar a un modelo ya descargado con `--cosyvoice-model-dir` y dar un prompt de voz con `--cosyvoice-prompt-wav`.
+- Los modelos son pesados; la primera ejecución descargará varios cientos de MB/GB.
 - El proyecto genera WAV (16-bit PCM). Ajusta a otro formato exportando con `pydub` si lo necesitas.
 - El texto se sintetiza en el orden original: encabezado seguido de sus párrafos, separados por silencios.
 
