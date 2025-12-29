@@ -56,7 +56,7 @@ class KokoroEngine(TtsEngine):
 
     def synthesize(self, text: str) -> AudioSegment:
         chunks = []
-        for _, _, audio in self.pipeline(text, voice="ef_bella"):
+        for _, _, audio in self.pipeline(text, voice="em_alex"):
             chunks.append(audio)
         merged = merge_numpy([np.array(c, dtype=np.float32) for c in chunks])
         if merged.size == 0:
