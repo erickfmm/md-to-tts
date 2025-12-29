@@ -5,9 +5,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Dependencias del sistema (ffmpeg para pydub)
+# Dependencias del sistema (ffmpeg para pydub, espeak-ng para kokoro español)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg && \
+    apt-get install -y --no-install-recommends ffmpeg espeak-ng && \
     rm -rf /var/lib/apt/lists/*
 
 # Actualizar pip primero

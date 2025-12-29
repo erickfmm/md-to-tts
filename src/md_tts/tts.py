@@ -45,7 +45,7 @@ class MmsSpanishEngine(TtsEngine):
 
 @dataclass
 class KokoroEngine(TtsEngine):
-    lang_code: str = "a"  # auto-detect / multilingual
+    lang_code: str = "es"  # Spanish
     device: Optional[str] = None
 
     def __post_init__(self):
@@ -56,7 +56,7 @@ class KokoroEngine(TtsEngine):
 
     def synthesize(self, text: str) -> AudioSegment:
         chunks = []
-        for _, _, audio in self.pipeline(text, voice="af_heart"):
+        for _, _, audio in self.pipeline(text, voice="ef_bella"):
             chunks.append(audio)
         merged = merge_numpy([np.array(c, dtype=np.float32) for c in chunks])
         if merged.size == 0:
