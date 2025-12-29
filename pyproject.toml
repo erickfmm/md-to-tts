@@ -5,14 +5,17 @@ description = "CLI para convertir Markdown en audio TTS (español)"
 authors = [{ name = "Equipo DMBOK", email = "example@example.com" }]
 requires-python = ">=3.10"
 dependencies = [
-    "transformers>=4.40.0",
+    "transformers>=4.46.0",
+    "accelerate>=0.30.0",
+    "huggingface_hub>=0.24.0",
     "torch>=2.1.0",
+    "torchaudio>=2.1.0",
     "pydub>=0.25.1",
     "soundfile>=0.12.1",
-    "numpy>=1.26.4",
+    "numpy>=1.25.0",
     "tqdm>=4.66.1",
     "kokoro>=0.9.2",
-    "chatterbox-tts>=0.2.0",
+    "chatterbox-tts>=0.1.6",
 ]
 
 [project.scripts]

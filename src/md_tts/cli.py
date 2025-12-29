@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import tempfile
 from pathlib import Path
 from typing import List
 
@@ -22,12 +23,26 @@ def process_markdown_file(
     engine_name: str,
     pause_ms: int,
     device: str | None,
+    cosyvoice_model_dir: Path | None = None,
+    cosyvoice_prompt_wav: Path | None = None,
+    save_fragments: bool = False,
 ) -> Path:
     paragraphs = md_parser.split_markdown(md_file)
     logger.info("%s -> %d fragmentos", md_file.name, len(paragraphs))
 
-    engine = build_engine(engine_name, device=device)
+    engine = build_engine(
+        engine_name,
+        device=device,
+        cosyvoice_model_dir=cosyvoice_model_dir,
+        cosyvoice_prompt_wav=cosyvoice_prompt_wav,
+    )
     segments: List[AudioSegment] = []
+
+    # Crear carpeta temporal para fragmentos si se solicita
+    temp_dir = None
+    if save_fragments:
+        temp_dir = output_dir / "fragments" / md_file.stem
+        temp_dir.mkdir(parents=True, exist_ok=True)
 
     for para in tqdm(paragraphs, desc=f"{md_file.name}", unit="p"):
         text = para.text.strip()
@@ -36,6 +51,12 @@ def process_markdown_file(
         try:
             seg = engine.synthesize(text)
             segments.append(seg)
+            
+            # Guardar fragmento individual si se solicita
+            if temp_dir:
+                fragment_name = f"{para.index:04d}_{para.section[:30] if para.section else 'intro'}.wav"
+                fragment_path = temp_dir / fragment_name
+                seg.export(fragment_path, format="wav")
         except Exception as exc:  # pragma: no cover - externo
             logger.error("Error sintetizando párrafo %s: %s", para.index, exc)
             continue
@@ -83,6 +104,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="cpu o cuda (si disponible)",
     )
+    parser.add_argument(
+        "--cosyvoice-model-dir",
+        type=Path,
+        default=None,
+        help="Ruta local del modelo CosyVoice (opcional; si no, descarga).",
+    )
+    parser.add_argument(
+        "--cosyvoice-prompt-wav",
+        type=Path,
+        default=None,
+        help="WAV de referencia de voz para CosyVoice (opcional).",
+    )
+    parser.add_argument(
+        "--save-fragments",
+        action="store_true",
+        help="Guardar fragmentos individuales en output_dir/fragments/",
+    )
     return parser
 
 
@@ -101,8 +139,13 @@ def main(argv: List[str] | None = None) -> None:
             engine_name=args.engine,
             pause_ms=args.pause_ms,
             device=args.device,
+            cosyvoice_model_dir=args.cosyvoice_model_dir,
+            cosyvoice_prompt_wav=args.cosyvoice_prompt_wav,
+            save_fragments=args.save_fragments,
         )
         logger.info("Audio generado: %s", out_path)
+        if args.save_fragments:
+            logger.info("Fragmentos guardados en: %s/fragments/%s", output_dir, md_file.stem)
 
 
 if __name__ == "__main__":
