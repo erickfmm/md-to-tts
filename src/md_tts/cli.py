@@ -4,7 +4,9 @@ import argparse
 import logging
 import tempfile
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
+from multiprocessing import Pool
+from functools import partial
 
 from pydub import AudioSegment
 from tqdm import tqdm
@@ -17,6 +19,52 @@ logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger("md_tts")
 
 
+def process_paragraph(
+    para: md_parser.Paragraph,
+    engine_name: str,
+    device: str | None,
+    cosyvoice_model_dir: Path | None,
+    cosyvoice_prompt_wav: Path | None,
+    temp_dir: Path | None,
+) -> Tuple[int, AudioSegment | None]:
+    """Procesa un párrafo individual. Retorna (index, segment)."""
+    text = para.text.strip()
+    if not text:
+        return (para.index, None)
+    
+    # Verificar si el fragmento ya existe
+    if temp_dir:
+        fragment_name = f"{para.index:04d}_{para.section[:30] if para.section else 'intro'}.wav"
+        fragment_path = temp_dir / fragment_name
+        if fragment_path.exists():
+            try:
+                seg = AudioSegment.from_wav(fragment_path)
+                return (para.index, seg)
+            except Exception as exc:
+                logger.warning("Error cargando fragmento existente %s: %s", fragment_path, exc)
+    
+    # Sintetizar el fragmento
+    try:
+        engine = build_engine(
+            engine_name,
+            device=device,
+            cosyvoice_model_dir=cosyvoice_model_dir,
+            cosyvoice_prompt_wav=cosyvoice_prompt_wav,
+        )
+        seg = engine.synthesize(text)
+        
+        # Guardar fragmento si se solicita
+        if temp_dir:
+            fragment_name = f"{para.index:04d}_{para.section[:30] if para.section else 'intro'}.wav"
+            fragment_path = temp_dir / fragment_name
+            seg.export(fragment_path, format="wav")
+        
+        return (para.index, seg)
+    except Exception as exc:
+        logger.error("Error sintetizando párrafo %s: %s", para.index, exc)
+        return (para.index, None)
+
+
 def process_markdown_file(
     md_file: Path,
     output_dir: Path,
@@ -26,45 +74,70 @@ def process_markdown_file(
     cosyvoice_model_dir: Path | None = None,
     cosyvoice_prompt_wav: Path | None = None,
     save_fragments: bool = False,
+    workers: int = 1,
 ) -> Path:
     paragraphs = md_parser.split_markdown(md_file)
     logger.info("%s -> %d fragmentos", md_file.name, len(paragraphs))
 
-    engine = build_engine(
-        engine_name,
-        device=device,
-        cosyvoice_model_dir=cosyvoice_model_dir,
-        cosyvoice_prompt_wav=cosyvoice_prompt_wav,
-    )
-    segments: List[AudioSegment] = []
-
-    # Crear carpeta temporal para fragmentos si se solicita
+    # Crear carpeta para fragmentos si se solicita
     temp_dir = None
     if save_fragments:
         temp_dir = output_dir / "fragments" / md_file.stem
         temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Contar fragmentos existentes
+        existing_fragments = list(temp_dir.glob("*.wav"))
+        if existing_fragments:
+            logger.info("Encontrados %d fragmentos existentes, reanudando...", len(existing_fragments))
 
-    for para in tqdm(paragraphs, desc=f"{md_file.name}", unit="p"):
-        text = para.text.strip()
-        if not text:
-            continue
-        try:
-            seg = engine.synthesize(text)
-            segments.append(seg)
-            
-            # Guardar fragmento individual si se solicita
-            if temp_dir:
-                fragment_name = f"{para.index:04d}_{para.section[:30] if para.section else 'intro'}.wav"
-                fragment_path = temp_dir / fragment_name
-                seg.export(fragment_path, format="wav")
-        except Exception as exc:  # pragma: no cover - externo
-            logger.error("Error sintetizando párrafo %s: %s", para.index, exc)
-            continue
-
+    segments: List[Tuple[int, AudioSegment]] = []
+    
+    if workers > 1:
+        # Procesamiento paralelo
+        process_func = partial(
+            process_paragraph,
+            engine_name=engine_name,
+            device=device,
+            cosyvoice_model_dir=cosyvoice_model_dir,
+            cosyvoice_prompt_wav=cosyvoice_prompt_wav,
+            temp_dir=temp_dir,
+        )
+        
+        with Pool(processes=workers) as pool:
+            results = list(tqdm(
+                pool.imap(process_func, paragraphs),
+                desc=f"{md_file.name}",
+                unit="p",
+                total=len(paragraphs)
+            ))
+        
+        segments = [(idx, seg) for idx, seg in results if seg is not None]
+    else:
+        # Procesamiento secuencial
+        for para in tqdm(paragraphs, desc=f"{md_file.name}", unit="p"):
+            idx, seg = process_paragraph(
+                para,
+                engine_name=engine_name,
+                device=device,
+                cosyvoice_model_dir=cosyvoice_model_dir,
+                cosyvoice_prompt_wav=cosyvoice_prompt_wav,
+                temp_dir=temp_dir,
+            )
+            if seg is not None:
+                segments.append((idx, seg))
+    
     if not segments:
         raise RuntimeError(f"No se generaron segmentos de audio para {md_file}")
+    
+    # Ordenar segmentos por índice para mantener el orden correcto
+    segments.sort(key=lambda x: x[0])
+    audio_segments = [seg for _, seg in segments]
+    
+    # Ordenar segmentos por índice para mantener el orden correcto
+    segments.sort(key=lambda x: x[0])
+    audio_segments = [seg for _, seg in segments]
 
-    combined = concatenate_with_pause(segments, pause_ms=pause_ms)
+    combined = concatenate_with_pause(audio_segments, pause_ms=pause_ms)
     output_path = output_dir / f"{md_file.stem}.wav"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     combined.export(output_path, format="wav")
@@ -119,7 +192,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--save-fragments",
         action="store_true",
-        help="Guardar fragmentos individuales en output_dir/fragments/",
+        help="Guardar fragmentos individuales en output_dir/fragments/ (permite reanudar)",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Número de workers paralelos para procesamiento (default: 1)",
     )
     return parser
 
@@ -142,6 +221,7 @@ def main(argv: List[str] | None = None) -> None:
             cosyvoice_model_dir=args.cosyvoice_model_dir,
             cosyvoice_prompt_wav=args.cosyvoice_prompt_wav,
             save_fragments=args.save_fragments,
+            workers=args.workers,
         )
         logger.info("Audio generado: %s", out_path)
         if args.save_fragments:

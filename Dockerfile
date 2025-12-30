@@ -5,6 +5,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Configurar repositorios de Brasil
+RUN sed -i 's|http://deb.debian.org|http://ftp.br.debian.org|g' /etc/apt/sources.list.d/debian.sources || \
+    sed -i 's|http://deb.debian.org|http://ftp.br.debian.org|g' /etc/apt/sources.list
+
 # Dependencias del sistema (ffmpeg para pydub, espeak-ng para kokoro español)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg espeak-ng && \
