@@ -78,8 +78,7 @@ Dockerfile        # Imagen lista para ejecutar
 ## Docker
 
 ```bash
-docker build -t md-tts .
-docker run --rm -v $(pwd):/app md-tts md-tts --input-dir modificacion1 --output-dir output_audio --engine mms
+docker build -t md-tts . && docker run --rm -v "%CD%:/app" md-tts --input-dir modificacion1 --output-dir output_audio --save-fragments --engine kokoro --workers 1
 ```
 
 ## Licencias de modelos
