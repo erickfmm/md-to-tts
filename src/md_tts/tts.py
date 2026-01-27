@@ -51,8 +51,8 @@ class KokoroEngine(TtsEngine):
     def __post_init__(self):
         from kokoro import KPipeline
 
-        self.pipeline = KPipeline(lang_code=self.lang_code)
         self.name = "hexgrad/Kokoro-82M"
+        self.pipeline = KPipeline(lang_code=self.lang_code, repo_id=self.name, device=self.device or "cpu")
 
     def synthesize(self, text: str) -> AudioSegment:
         chunks = []
